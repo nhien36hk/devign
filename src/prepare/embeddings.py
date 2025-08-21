@@ -54,7 +54,8 @@ class NodesEmbedding:
         vectors = []
 
         for token in tokenized_code:
-            if token in self.w2v_keyed_vectors.vocab:
+            # Gensim 4.x compatibility: use key_to_index instead of vocab
+            if token in self.w2v_keyed_vectors.key_to_index:
                 vectors.append(self.w2v_keyed_vectors[token])
             else:
                 # print(node.label, token, node.get_code(), tokenized_code)
@@ -85,7 +86,9 @@ class GraphsEmbedding:
                 raise Exception("Something wrong with the order")
 
             for e_id, edge in node.edges.items():
-                if edge.type != self.edge_type:
+                edge_type = [et for et in self.edge_type.split(",")]
+
+                if edge.type not in edge_type:
                     continue
 
                 if edge.node_in in nodes and edge.node_in != node_id:

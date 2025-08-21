@@ -40,6 +40,9 @@ class Conv(nn.Module):
 
         # Dropout
         self.drop = nn.Dropout(p=0.2)
+        
+        # BatchNorm layer
+        self.bn = nn.BatchNorm1d(1)
 
         self.mp_1 = nn.MaxPool1d(**maxpool1d_1)
         self.mp_2 = nn.MaxPool1d(**maxpool1d_2)
@@ -62,10 +65,11 @@ class Conv(nn.Module):
 
         Z = Z.view(-1, Z_flatten_size)
         Y = Y.view(-1, Y_flatten_size)
+        
         res = self.fc1(Z) * self.fc2(Y)
         res = self.drop(res)
-        # res = res.mean(1)
-        # print(res, mean)
+        res = self.bn(res)
+        
         sig = torch.sigmoid(torch.flatten(res))
         return sig
 

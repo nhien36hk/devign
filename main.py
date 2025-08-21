@@ -10,9 +10,12 @@
 
 import argparse
 import gc
+import os
 import shutil
 from argparse import ArgumentParser
 
+import numpy as np
+import pandas as pd
 from gensim.models.word2vec import Word2Vec
 
 import configs
@@ -33,21 +36,22 @@ def select(dataset):
     #print(len(result))
     #result = result.iloc[11001:]
     #print(len(result))
-    result = result.head(200)
+    result = result.head(1000)
 
     return result
-
 
 def create_task():
     context = configs.Create()
     raw = data.read(PATHS.raw, FILES.raw)
     filtered = data.apply_filter(raw, select)
     filtered = data.clean(filtered)
+    print("Total Functions: ", len(filtered))
     data.drop(filtered, ["commit_id", "project"])
     slices = data.slice_frame(filtered, context.slice_size)
     slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
 
     cpg_files = []
+    # cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
     # Create CPG binary files
     for s, slice in slices:
         data.to_files(slice, PATHS.joern)
@@ -57,6 +61,10 @@ def create_task():
         shutil.rmtree(PATHS.joern)
     # Create CPG with graphs json files
     json_files = prepare.joern_create(context.joern_cli_dir, PATHS.cpg, PATHS.cpg, cpg_files)
+    # json_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.json')]
+    # Sort JSON files by their numeric prefix to match with slice indices
+    json_files.sort(key=lambda x: int(x.split('_')[0]))
+    print(json_files)
     for (s, slice), json_file in zip(slices, json_files):
         graphs = prepare.json_process(PATHS.cpg, json_file)
         if graphs is None:
@@ -81,9 +89,11 @@ def embed_task():
         cpg_dataset = data.load(PATHS.cpg, pkl_file)
         tokens_dataset = data.tokenize(cpg_dataset)
         data.write(tokens_dataset, PATHS.tokens, f"{file_name}_{FILES.tokens}")
+        # Convert tokens to list for Word2Vec (Gensim 4.x compatibility)
+        tokens_list = tokens_dataset.tokens.tolist()
         # word2vec used to learn the initial embedding of each token
-        w2vmodel.build_vocab(sentences=tokens_dataset.tokens, update=not w2v_init)
-        w2vmodel.train(tokens_dataset.tokens, total_examples=w2vmodel.corpus_count, epochs=1)
+        w2vmodel.build_vocab(corpus_iterable=tokens_list, update=not w2v_init)
+        w2vmodel.train(corpus_iterable=tokens_list, total_examples=w2vmodel.corpus_count, epochs=1)
         if w2v_init:
             w2v_init = False
         # Embed cpg to node representation and pass to graph data structure
@@ -129,6 +139,77 @@ def process_task(stopping):
     process.predict(model, test_loader_step)
 
 
+def crossval_task(stopping, k_folds=10):
+    context = configs.Process()
+    devign = configs.Devign()
+    input_dataset = data.loads(PATHS.input)
+
+    folds = data.kfold_split(input_dataset, k=k_folds, shuffle=context.shuffle)
+    results = []
+
+    for fold_idx in range(k_folds):
+        print(f"\n===== Fold {fold_idx + 1}/{k_folds} =====")
+
+        test_df = folds[fold_idx]
+        train_val_df = pd.concat([f for i, f in enumerate(folds) if i != fold_idx], ignore_index=True)
+
+        train_set, val_set = data.train_val_split(train_val_df, train_ratio=0.8889, shuffle=context.shuffle)
+        test_set = data.InputDataset(test_df)
+
+        train_loader = train_set.get_loader(context.batch_size, shuffle=context.shuffle)
+        val_loader = val_set.get_loader(context.batch_size, shuffle=context.shuffle)
+        test_loader = test_set.get_loader(context.batch_size, shuffle=False)
+
+        train_loader_step = process.LoaderStep("Train", train_loader, DEVICE)
+        val_loader_step = process.LoaderStep("Validation", val_loader, DEVICE)
+        test_loader_step = process.LoaderStep("Test", test_loader, DEVICE)
+
+        model_path = PATHS.model + f"fold_{fold_idx}_" + FILES.model
+        model = process.Devign(path=model_path, device=DEVICE, model=devign.model,
+                               learning_rate=devign.learning_rate, weight_decay=devign.weight_decay,
+                               loss_lambda=devign.loss_lambda)
+        train = process.Train(model, context.epochs)
+
+        if stopping:
+            early_stopping = process.EarlyStopping(model, patience=context.patience)
+            train(train_loader_step, val_loader_step, early_stopping)
+            model.load()
+        else:
+            train(train_loader_step, val_loader_step)
+            model.save()
+
+        fold_metrics = process.predict(model, test_loader_step)
+        results.append(fold_metrics)
+
+        # Print per-fold summary
+        print(
+            "Fold metrics: "
+            f"Acc {fold_metrics['Accuracy']:.4f}, "
+            f"Pre {fold_metrics['Precision']:.4f}, "
+            f"Rec {fold_metrics['Recall']:.4f}, "
+            f"F1 {fold_metrics['F-measure']:.4f}"
+        )
+
+    if results:
+        keys = ["Accuracy", "Precision", "Recall", "F-measure"]
+        means = {k: float(np.mean([r[k] for r in results])) for k in keys}
+        stds = {k: float(np.std([r[k] for r in results])) for k in keys}
+
+        print("\nCross-validation summary (mean ± std):")
+        print(
+            f"Acc {means['Accuracy']:.4f} ± {stds['Accuracy']:.4f} | "
+            f"Pre {means['Precision']:.4f} ± {stds['Precision']:.4f} | "
+            f"Rec {means['Recall']:.4f} ± {stds['Recall']:.4f} | "
+            f"F1 {means['F-measure']:.4f} ± {stds['F-measure']:.4f}"
+        )
+
+        print("Per-fold metrics:")
+        print("Acc:", [round(r["Accuracy"], 4) for r in results])
+        print("Pre:", [round(r["Precision"], 4) for r in results])
+        print("Rec:", [round(r["Recall"], 4) for r in results])
+        print("F1:", [round(r["F-measure"], 4) for r in results])
+
+
 def main():
     """
     main function that executes tasks based on command-line options
@@ -139,6 +220,8 @@ def main():
     parser.add_argument('-e', '--embed', action='store_true')
     parser.add_argument('-p', '--process', action='store_true')
     parser.add_argument('-pS', '--process_stopping', action='store_true')
+    parser.add_argument('-cv', '--crossval', action='store_true')
+    parser.add_argument('-k', '--k_folds', type=int, default=10)
 
     args = parser.parse_args()
 
@@ -150,6 +233,8 @@ def main():
         process_task(False)
     if args.process_stopping:
         process_task(True)
+    if args.crossval:
+        crossval_task(stopping=args.process_stopping, k_folds=args.k_folds)
 
 
 

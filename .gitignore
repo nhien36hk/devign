@@ -27,6 +27,14 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+joern/joern-cli/
+*.json
+*.bin
+*.pkl
+devign_env/
+
+
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -141,3 +149,5 @@ cython_debug/
 # static files generated from Django application using `collectstatic`
 media
 static
+data/cpg/*.pkl
+data/input/*_cpg_input.pkl

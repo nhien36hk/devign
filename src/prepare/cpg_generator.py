@@ -28,40 +28,67 @@ def graph_indexing(graph):
 
 def joern_parse(joern_path, input_path, output_path, file_name):
     out_file = file_name + ".bin"
-    joern_parse_call = subprocess.run(["./" + joern_path + "joern-parse", input_path, "--output", output_path + out_file],
-                                      stdout=subprocess.PIPE, text=True, check=True)
+    env = os.environ.copy()
+    env["JAVA_TOOL_OPTIONS"] = "-Xmx16g -Xms2g"
+    joern_parse_call = subprocess.run(["./" + joern_path + "joern-parse", input_path, "--out", output_path + out_file],
+                                      stdout=subprocess.PIPE, text=True, check=True, env=env)
     print(str(joern_parse_call))
     return out_file
 
 
 def joern_create(joern_path, in_path, out_path, cpg_files):
-    joern_process = subprocess.Popen(["./" + joern_path + "joern"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     json_files = []
-    for cpg_file in cpg_files:
-        json_file_name = f"{cpg_file.split('.')[0]}.json"
-        json_files.append(json_file_name)
+    script_path = f"{os.path.dirname(os.path.abspath(joern_path))}/graph-for-funcs.sc"
+    batch_size = 4
+    # Xử lý theo batch
+    for i in range(0, len(cpg_files), batch_size):
+        batch = cpg_files[i:i+batch_size]
+        batch_num = i//batch_size + 1
+        total_batches = (len(cpg_files) + batch_size - 1) // batch_size
 
-        print(in_path+cpg_file)
-        if os.path.exists(in_path+cpg_file):
+        print(f"🚀 Batch {batch_num}/{total_batches}: {len(batch)} files")
+
+        for cpg_file in batch:
+            json_file_name = f"{cpg_file.split('.')[0]}.json"
             json_out = f"{os.path.abspath(out_path)}/{json_file_name}"
-            import_cpg_cmd = f"importCpg(\"{os.path.abspath(in_path)}/{cpg_file}\")\r".encode()
-            script_path = f"{os.path.dirname(os.path.abspath(joern_path))}/graph-for-funcs.sc"
-            run_script_cmd = f"cpg.runScript(\"{script_path}\").toString() |> \"{json_out}\"\r".encode()
-            joern_process.stdin.write(import_cpg_cmd)
-            print(joern_process.stdout.readline().decode())
-            joern_process.stdin.write(run_script_cmd)
-            print(joern_process.stdout.readline().decode())
-            joern_process.stdin.write("delete\r".encode())
-            print(joern_process.stdout.readline().decode())
-    try:
-        outs, errs = joern_process.communicate(timeout=60)
-    except subprocess.TimeoutExpired:
-        joern_process.kill()
-        outs, errs = joern_process.communicate()
-    if outs is not None:
-        print(f"Outs: {outs.decode()}")
-    if errs is not None:
-        print(f"Errs: {errs.decode()}")
+            cpg_abs = f"{os.path.abspath(in_path)}/{cpg_file}"
+
+            if not os.path.exists(cpg_abs):
+                print(f"skip missing: {cpg_abs}")
+                continue
+
+            commands = [
+                "./" + joern_path + "joern",
+                "--script", script_path,
+                "--params", f"cpgFile={cpg_abs},outputFile={json_out}"
+            ]
+
+            env = os.environ.copy()
+            env["JAVA_TOOL_OPTIONS"] = "-Xmx16g -Xms2g"
+
+            try:
+                proc = subprocess.run(
+                    commands,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=3600,
+                    check=True,
+                    env=env
+                )
+                if proc.stderr and "WARN" not in proc.stderr:
+                    print(proc.stderr)
+
+                json_files.append(json_file_name)
+                print(f"✅ {json_file_name}")
+            except subprocess.TimeoutExpired:
+                print(f"❌ timeout: {cpg_file}")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ failed: {cpg_file}\n{e.stderr}")
+                
+        print(f"✅ Batch {batch_num} done")
+
+    print(f"🎉 Hoàn thành {len(json_files)} files!")
     return json_files
 
 

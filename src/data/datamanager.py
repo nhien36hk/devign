@@ -8,7 +8,7 @@ import src.utils.functions.parse as parse
 from os import listdir
 from os.path import isfile, join
 from src.utils.objects.input_dataset import InputDataset
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 
 
 def read(path, json_file):
@@ -86,15 +86,46 @@ def train_val_test_split(data_frame: pd.DataFrame, shuffle=True):
     train_true, test_true = train_test_split(true, test_size=0.2, shuffle=shuffle)
     test_true, val_true = train_test_split(test_true, test_size=0.5, shuffle=shuffle)
 
-    train = train_false.append(train_true)
-    val = val_false.append(val_true)
-    test = test_false.append(test_true)
+    train = pd.concat([train_false, train_true], ignore_index=True)
+    val = pd.concat([val_false, val_true], ignore_index=True)
+    test = pd.concat([test_false, test_true], ignore_index=True)
 
     train = train.reset_index(drop=True)
     val = val.reset_index(drop=True)
     test = test.reset_index(drop=True)
 
     return InputDataset(train), InputDataset(test), InputDataset(val)
+
+
+def kfold_split(data_frame: pd.DataFrame, k: int = 5, shuffle: bool = True, random_state: int = 42):
+    if 'target' not in data_frame.columns:
+        raise ValueError("DataFrame must contain 'target' column for stratified K-fold splitting.")
+
+    y = data_frame['target']
+    skfold = StratifiedKFold(n_splits=k, shuffle=shuffle, random_state=random_state)
+    folds = []
+    for _, test_idx in skfold.split(data_frame, y):
+        folds.append(data_frame.iloc[test_idx].reset_index(drop=True))
+
+    return folds
+
+
+def train_val_split(data_frame: pd.DataFrame, train_ratio: float = 0.8, shuffle: bool = True, random_state: int = 42):
+    y = data_frame['target']
+    stratify = y if len(y.unique()) > 1 else None
+
+    train_df, val_df = train_test_split(
+        data_frame,
+        test_size=1 - train_ratio,
+        shuffle=shuffle,
+        stratify=stratify,
+        random_state=random_state
+    )
+
+    train_df = train_df.reset_index(drop=True)
+    val_df = val_df.reset_index(drop=True)
+
+    return InputDataset(train_df), InputDataset(val_df)
 
 
 def get_directory_files(directory):
@@ -111,7 +142,7 @@ def loads(data_sets_dir, ratio=1):
     data_sets_files.remove(data_sets_files[0])
 
     for ds_file in data_sets_files:
-        dataset = dataset.append(load(data_sets_dir, ds_file))
+        dataset = pd.concat([dataset, load(data_sets_dir, ds_file)], ignore_index=True)
 
     return dataset
 

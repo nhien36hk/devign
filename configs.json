@@ -16,7 +16,7 @@
     },
     "create" : {
         "filter_column_value": {"project" : "qemu"},
-        "slice_size": 100,
+        "slice_size": 1000,
         "joern_cli_dir": "joern/joern-cli/"
     },
     "paths" : {
@@ -29,7 +29,7 @@
         "w2v" : "data/w2v/"
     },
     "files" : {
-        "raw" : "dataset.json",
+        "raw" : "function.json",
         "cpg" : "cpg",
         "tokens" : "tokens.pkl",
         "w2v" : "w2v.model",
@@ -38,16 +38,16 @@
     },
     "embed" : {
         "nodes_dim" : 205,
-        "word2vec_args": {"size" : 100, "alpha" : 0.01, "window" : 5, "min_count" : 3, "sample" : 1e-5,
+        "word2vec_args": {"vector_size" : 100, "alpha" : 0.01, "window" : 5, "min_count" : 3, "sample" : 1e-5,
                 "workers" : 4, "sg" : 1, "hs" : 0, "negative" : 5
             },
         "edge_type": "Ast"
     },
     "process" : {
-        "epochs" : 100,
-        "patience" : 10,
-        "batch_size" : 8,
+        "epochs" : 50,
+        "patience" : 5,
+        "batch_size" : 212,
         "dataset_ratio" : 0.2,
-        "shuffle" : false
+        "shuffle" : true
     }
 }

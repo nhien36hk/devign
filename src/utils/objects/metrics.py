@@ -10,7 +10,6 @@ class Metrics:
         self.scores = outs
         self.labels = labels
         self.transform()
-        print(self.predicts)
 
     def transform(self):
         self.series = pd.Series(self.scores)

@@ -1,4 +1,5 @@
 from ..utils.objects import stats
+from tqdm import tqdm
 
 
 class LoaderStep:
@@ -11,7 +12,8 @@ class LoaderStep:
     def __call__(self, step):
         self.stats = stats.Stats(self.name)
 
-        for i, batch in enumerate(self.loader):
+        iterator = tqdm(self.loader, desc=self.name, leave=False)
+        for i, batch in enumerate(iterator):
             batch.to(self.device)
             stat: stats.Stat = step(i, batch, batch.y)
             self.stats(stat)
