@@ -39,56 +39,40 @@ def joern_parse(joern_path, input_path, output_path, file_name):
 def joern_create(joern_path, in_path, out_path, cpg_files):
     json_files = []
     script_path = f"{os.path.dirname(os.path.abspath(joern_path))}/graph-for-funcs.sc"
-    batch_size = 4
-    # Xử lý theo batch
-    for i in range(0, len(cpg_files), batch_size):
-        batch = cpg_files[i:i+batch_size]
-        batch_num = i//batch_size + 1
-        total_batches = (len(cpg_files) + batch_size - 1) // batch_size
 
-        print(f"🚀 Batch {batch_num}/{total_batches}: {len(batch)} files")
+    for cpg_file in cpg_files:
+        json_file_name = f"{cpg_file.split('.')[0]}.json"
+        json_out = f"{os.path.abspath(out_path)}/{json_file_name}"
+        cpg_abs = f"{os.path.abspath(in_path)}/{cpg_file}"
 
-        for cpg_file in batch:
-            json_file_name = f"{cpg_file.split('.')[0]}.json"
-            json_out = f"{os.path.abspath(out_path)}/{json_file_name}"
-            cpg_abs = f"{os.path.abspath(in_path)}/{cpg_file}"
+        commands = [
+            "./" + joern_path + "joern",
+            "--script", script_path,
+            "--params", f"cpgFile={cpg_abs},outputFile={json_out}"
+        ]
 
-            if not os.path.exists(cpg_abs):
-                print(f"skip missing: {cpg_abs}")
-                continue
+        env = os.environ.copy()
+        env["JAVA_TOOL_OPTIONS"] = "-Xmx16g -Xms2g"
 
-            commands = [
-                "./" + joern_path + "joern",
-                "--script", script_path,
-                "--params", f"cpgFile={cpg_abs},outputFile={json_out}"
-            ]
+        try:
+            proc = subprocess.run(
+                commands,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=3600,
+                check=True,
+                env=env
+            )
+            if proc.stderr and "WARN" not in proc.stderr:
+                print(proc.stderr)
 
-            env = os.environ.copy()
-            env["JAVA_TOOL_OPTIONS"] = "-Xmx16g -Xms2g"
-
-            try:
-                proc = subprocess.run(
-                    commands,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=3600,
-                    check=True,
-                    env=env
-                )
-                if proc.stderr and "WARN" not in proc.stderr:
-                    print(proc.stderr)
-
-                json_files.append(json_file_name)
-                print(f"✅ {json_file_name}")
-            except subprocess.TimeoutExpired:
-                print(f"❌ timeout: {cpg_file}")
-            except subprocess.CalledProcessError as e:
-                print(f"❌ failed: {cpg_file}\n{e.stderr}")
-                
-        print(f"✅ Batch {batch_num} done")
-
-    print(f"🎉 Hoàn thành {len(json_files)} files!")
+            json_files.append(json_file_name)
+            print(f"✅ {json_file_name}")
+        except subprocess.TimeoutExpired:
+            print(f"❌ timeout: {cpg_file}")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ failed: {cpg_file}\n{e.stderr}")
     return json_files
 
 

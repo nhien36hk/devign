@@ -28,16 +28,20 @@ PATHS = configs.Paths()
 FILES = configs.Files()
 DEVICE = FILES.get_device()
 
+def truncate_to_n_tokens(text):
+    max_tokens = 2000
+    if not isinstance(text, str):
+        return text
+    tokens = text.split()
+    if len(tokens) <= max_tokens:
+        return text
+    return " ".join(tokens[:max_tokens])
 
 def select(dataset):
-    result = dataset.loc[dataset['project'] == "FFmpeg"]
-    len_filter = result.func.str.len() < 1200
+    result = dataset.copy()
+    # result["func"] = result["func"].map(truncate_to_n_tokens)
+    len_filter = result.func.str.len() < 2000
     result = result.loc[len_filter]
-    #print(len(result))
-    #result = result.iloc[11001:]
-    #print(len(result))
-    result = result.head(1000)
-
     return result
 
 def create_task():
@@ -46,12 +50,19 @@ def create_task():
     filtered = data.apply_filter(raw, select)
     filtered = data.clean(filtered)
     print("Total Functions: ", len(filtered))
+    positive = filtered.loc[filtered.target == 1]
+    negative = filtered.loc[filtered.target == 0]
+    print("Positive Functions: ", len(positive))
+    print("Negative Functions: ", len(negative))
+    print("Ratio positive: ", len(positive) / len(filtered))
+    print("Ratio negative: ", len(negative) / len(filtered))
     data.drop(filtered, ["commit_id", "project"])
     slices = data.slice_frame(filtered, context.slice_size)
     slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
 
     cpg_files = []
     # cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
+    # print(cpg_files)
     # Create CPG binary files
     for s, slice in slices:
         data.to_files(slice, PATHS.joern)
