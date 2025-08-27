@@ -45,6 +45,11 @@ def joern_create(joern_path, in_path, out_path, cpg_files):
         json_out = f"{os.path.abspath(out_path)}/{json_file_name}"
         cpg_abs = f"{os.path.abspath(in_path)}/{cpg_file}"
 
+        if os.path.exists(json_out):
+            print(f"✅ {json_out} already exists.")
+            json_files.append(json_file_name)
+            continue
+
         commands = [
             "./" + joern_path + "joern",
             "--script", script_path,

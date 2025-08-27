@@ -28,20 +28,18 @@ PATHS = configs.Paths()
 FILES = configs.Files()
 DEVICE = FILES.get_device()
 
-def truncate_to_n_tokens(text):
-    max_tokens = 2000
+
+def truncate_to_n_chars(text):
+    max_chars=2000
     if not isinstance(text, str):
         return text
-    tokens = text.split()
-    if len(tokens) <= max_tokens:
+    if len(text) <= max_chars:
         return text
-    return " ".join(tokens[:max_tokens])
+    return text[:max_chars]
 
 def select(dataset):
     result = dataset.copy()
-    # result["func"] = result["func"].map(truncate_to_n_tokens)
-    len_filter = result.func.str.len() < 2000
-    result = result.loc[len_filter]
+    result["func"] = result["func"].map(truncate_to_n_chars)
     return result
 
 def create_task():
@@ -55,15 +53,15 @@ def create_task():
     slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
 
     cpg_files = []
-    # cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
+    cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
     # print(cpg_files)
     # Create CPG binary files
-    for s, slice in slices:
-        data.to_files(slice, PATHS.joern)
-        cpg_file = prepare.joern_parse(context.joern_cli_dir, PATHS.joern, PATHS.cpg, f"{s}_{FILES.cpg}")
-        cpg_files.append(cpg_file)
-        print(f"Dataset {s} to cpg.")
-        shutil.rmtree(PATHS.joern)
+    # for s, slice in slices:
+    #     data.to_files(slice, PATHS.joern)
+    #     cpg_file = prepare.joern_parse(context.joern_cli_dir, PATHS.joern, PATHS.cpg, f"{s}_{FILES.cpg}")
+    #     cpg_files.append(cpg_file)
+    #     print(f"Dataset {s} to cpg.")
+    #     shutil.rmtree(PATHS.joern)
     # Create CPG with graphs json files
     json_files = prepare.joern_create(context.joern_cli_dir, PATHS.cpg, PATHS.cpg, cpg_files)
     # json_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.json')]
