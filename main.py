@@ -50,12 +50,6 @@ def create_task():
     filtered = data.apply_filter(raw, select)
     filtered = data.clean(filtered)
     print("Total Functions: ", len(filtered))
-    positive = filtered.loc[filtered.target == 1]
-    negative = filtered.loc[filtered.target == 0]
-    print("Positive Functions: ", len(positive))
-    print("Negative Functions: ", len(negative))
-    print("Ratio positive: ", len(positive) / len(filtered))
-    print("Ratio negative: ", len(negative) / len(filtered))
     data.drop(filtered, ["commit_id", "project"])
     slices = data.slice_frame(filtered, context.slice_size)
     slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
@@ -104,7 +98,7 @@ def embed_task():
         tokens_list = tokens_dataset.tokens.tolist()
         # word2vec used to learn the initial embedding of each token
         w2vmodel.build_vocab(corpus_iterable=tokens_list, update=not w2v_init)
-        w2vmodel.train(corpus_iterable=tokens_list, total_examples=w2vmodel.corpus_count, epochs=1)
+        w2vmodel.train(corpus_iterable=tokens_list, total_examples=w2vmodel.corpus_count, epochs=10)
         if w2v_init:
             w2v_init = False
         # Embed cpg to node representation and pass to graph data structure
