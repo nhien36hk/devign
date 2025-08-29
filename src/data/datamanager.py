@@ -55,11 +55,8 @@ def check_file_exists(path, file_name):
 
 
 def tokenize(data_frame: pd.DataFrame):
-    data_frame.func = data_frame.func.apply(parse.tokenizer)
-    # Change column name
-    data_frame = rename(data_frame, 'func', 'tokens')
-    # Keep just the tokens
-    return data_frame[["tokens"]]
+    tokens = data_frame["func"].apply(parse.tokenizer)
+    return pd.DataFrame({"tokens": tokens}, index=data_frame.index)
 
 
 def to_files(data_frame: pd.DataFrame, out_path):

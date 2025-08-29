@@ -83,6 +83,7 @@ def embed_task():
     w2v_init = True
     for pkl_file in dataset_files:
         file_name = pkl_file.split(".")[0]
+        # Check if input file are already created 
         input_file = f"{file_name}_{FILES.input}"
         if data.check_file_exists(PATHS.input, input_file):
             continue
@@ -105,7 +106,7 @@ def embed_task():
                                                                                     w2vmodel.wv, context.edge_type), axis=1)
         data.drop(cpg_dataset, ["nodes"])
         print(f"Saving input dataset {file_name} with size {len(cpg_dataset)}.")
-        data.write(cpg_dataset[["input", "target"]], PATHS.input, input_file)
+        data.write(cpg_dataset[["input", "target", "func"]], PATHS.input, input_file)
         del cpg_dataset
         gc.collect()
     print("Saving w2vmodel.")
