@@ -1,4 +1,5 @@
 import glob
+import pickle  # Thêm dòng này vào đầu file
 
 import pandas as pd
 import numpy as np
@@ -44,6 +45,13 @@ def apply_filter(data_frame: pd.DataFrame, filter_func):
 
 def rename(data_frame: pd.DataFrame, old, new):
     return data_frame.rename(columns={old: new})
+    
+    
+def check_file_exists(path, file_name):
+    if os.path.exists(path + file_name):
+        print(f"✅ {path + file_name} already exists.")
+        return True
+    return False
 
 
 def tokenize(data_frame: pd.DataFrame):

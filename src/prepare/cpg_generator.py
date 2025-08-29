@@ -5,7 +5,7 @@ import os.path
 import os
 import time
 from .cpg_client_wrapper import CPGClientWrapper
-#from ..data import datamanager as data
+from ..data import datamanager as data
 
 
 def funcs_to_graphs(funcs_path):
@@ -28,8 +28,10 @@ def graph_indexing(graph):
 
 def joern_parse(joern_path, input_path, output_path, file_name):
     out_file = file_name + ".bin"
+    if data.check_file_exists(output_path, out_file):
+        return out_file
     env = os.environ.copy()
-    env["JAVA_TOOL_OPTIONS"] = "-Xmx16g -Xms2g"
+    env["JAVA_TOOL_OPTIONS"] = "-Xmx12g -Xms2g"
     joern_parse_call = subprocess.run(["./" + joern_path + "joern-parse", input_path, "--out", output_path + out_file],
                                       stdout=subprocess.PIPE, text=True, check=True, env=env)
     print(str(joern_parse_call))
@@ -45,8 +47,7 @@ def joern_create(joern_path, in_path, out_path, cpg_files):
         json_out = f"{os.path.abspath(out_path)}/{json_file_name}"
         cpg_abs = f"{os.path.abspath(in_path)}/{cpg_file}"
 
-        if os.path.exists(json_out):
-            print(f"✅ {json_out} already exists.")
+        if data.check_file_exists(out_path, json_file_name):
             json_files.append(json_file_name)
             continue
 
