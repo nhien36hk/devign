@@ -28,40 +28,31 @@ PATHS = configs.Paths()
 FILES = configs.Files()
 DEVICE = FILES.get_device()
 
-
-def truncate_to_n_chars(text):
-    max_chars=2000
-    if not isinstance(text, str):
-        return text
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars]
-
 def select(dataset):
     result = dataset.copy()
-    result["func"] = result["func"].map(truncate_to_n_chars)
+    len_filter = result.func.map(lambda x: len(str(x).split())) < 128
+    result = result.loc[len_filter]
     return result
 
 def create_task():
     context = configs.Create()
     raw = data.read(PATHS.raw, FILES.raw)
-    filtered = data.apply_filter(raw, select)
-    filtered = data.clean(filtered)
+    # filtered = data.apply_filter(raw, select)
+    filtered = data.clean(raw)
     print("Total Functions: ", len(filtered))
     data.drop(filtered, ["commit_id", "project"])
     slices = data.slice_frame(filtered, context.slice_size)
     slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
 
     cpg_files = []
-    cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
-    # print(cpg_files)
+    # cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
     # Create CPG binary files
-    # for s, slice in slices:
-    #     data.to_files(slice, PATHS.joern)
-    #     cpg_file = prepare.joern_parse(context.joern_cli_dir, PATHS.joern, PATHS.cpg, f"{s}_{FILES.cpg}")
-    #     cpg_files.append(cpg_file)
-    #     print(f"Dataset {s} to cpg.")
-    #     shutil.rmtree(PATHS.joern)
+    for s, slice in slices:
+        data.to_files(slice, PATHS.joern)
+        cpg_file = prepare.joern_parse(context.joern_cli_dir, PATHS.joern, PATHS.cpg, f"{s}_{FILES.cpg}")
+        cpg_files.append(cpg_file)
+        print(f"Dataset {s} to cpg.")
+        shutil.rmtree(PATHS.joern)
     # Create CPG with graphs json files
     json_files = prepare.joern_create(context.joern_cli_dir, PATHS.cpg, PATHS.cpg, cpg_files)
     # json_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.json')]
@@ -70,13 +61,16 @@ def create_task():
     print(json_files)
     for (s, slice), json_file in zip(slices, json_files):
         graphs = prepare.json_process(PATHS.cpg, json_file)
+        pkl_file = f"{s}_{FILES.cpg}.pkl"
         if graphs is None:
             print(f"Dataset chunk {s} not processed.")
+            continue
+        if data.check_file_exists(PATHS.cpg, pkl_file):
             continue
         dataset = data.create_with_index(graphs, ["Index", "cpg"])
         dataset = data.inner_join_by_index(slice, dataset)
         print(f"Writing cpg dataset chunk {s}.")
-        data.write(dataset, PATHS.cpg, f"{s}_{FILES.cpg}.pkl")
+        data.write(dataset, PATHS.cpg, pkl_file)
         del dataset
         gc.collect()
 
@@ -89,6 +83,11 @@ def embed_task():
     w2v_init = True
     for pkl_file in dataset_files:
         file_name = pkl_file.split(".")[0]
+        # Check if input file are already created 
+        input_file = f"{file_name}_{FILES.input}"
+        if data.check_file_exists(PATHS.input, input_file):
+            continue
+        print(f"Processing {pkl_file}...")
         cpg_dataset = data.load(PATHS.cpg, pkl_file)
         tokens_dataset = data.tokenize(cpg_dataset)
         data.write(tokens_dataset, PATHS.tokens, f"{file_name}_{FILES.tokens}")
@@ -107,12 +106,11 @@ def embed_task():
                                                                                     w2vmodel.wv, context.edge_type), axis=1)
         data.drop(cpg_dataset, ["nodes"])
         print(f"Saving input dataset {file_name} with size {len(cpg_dataset)}.")
-        data.write(cpg_dataset[["input", "target"]], PATHS.input, f"{file_name}_{FILES.input}")
+        data.write(cpg_dataset[["input", "target", "func"]], PATHS.input, input_file)
         del cpg_dataset
         gc.collect()
     print("Saving w2vmodel.")
     w2vmodel.save(f"{PATHS.w2v}/{FILES.w2v}")
-
 
 def process_task(stopping):
     context = configs.Process()

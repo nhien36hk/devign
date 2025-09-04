@@ -99,17 +99,7 @@ implicit val encodeFuncResult: Encoder[GraphForFuncsResult] = deriveEncoder
         val sink = local.evalType(".*").referencingIdentifiers.dedup
         val source = new NodeSteps(methodVertex.out(EdgeTypes.CONTAINS).hasLabel(NodeTypes.CALL).cast[nodes.Call]).nameNot("<operator>.*").dedup
 
-        val pdgChildren = sink
-          .reachableByFlows(source)
-          .l
-          .flatMap { path =>
-            path.elements
-              .map {
-                case trackingPoint @ (_: MethodParameterIn) => trackingPoint.start.method.head
-                case trackingPoint                          => trackingPoint.cfgNode
-              }
-          }
-          .filter(_.toString != methodId)
+        val pdgChildren = List.empty
 
         GraphForFuncsFunction(methodName, methodFile, methodId, astChildren, cfgChildren, pdgChildren.distinct)
       }.l
