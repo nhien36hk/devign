@@ -47,7 +47,8 @@ final case class GraphForFuncsFunction(function: String,
                                        id: String,
                                        AST: List[nodes.AstNode],
                                        CFG: List[nodes.AstNode],
-                                       PDG: List[nodes.AstNode])
+                                       CDG: List[nodes.AstNode],
+                                       DDG: List[nodes.AstNode])
 final case class GraphForFuncsResult(functions: List[GraphForFuncsFunction])
 
 implicit val encodeEdge: Encoder[OdbEdge] =
@@ -63,7 +64,7 @@ implicit val encodeNode: Encoder[nodes.AstNode] =
     Json.obj(
       ("id", Json.fromString(node.toString)),
       ("edges",
-        Json.fromValues((node.inE("AST", "CFG").l ++ node.outE("AST", "CFG").l).map(_.asJson))),
+        Json.fromValues((node.inE("AST", "CFG", "CDG", "REACHING_DEF").l ++ node.outE("AST", "CFG", "CDG", "REACHING_DEF").l).map(_.asJson))),
       ("properties", Json.fromValues(node.propertyMap.asScala.toList.map { case (key, value) =>
         Json.obj(
           ("key", Json.fromString(key)),
@@ -89,23 +90,20 @@ implicit val encodeFuncResult: Encoder[GraphForFuncsResult] = deriveEncoder
         val astChildren = method.astMinusRoot.l
         val cfgChildren = method.out(EdgeTypes.CONTAINS).asScala.collect { case node: nodes.CfgNode => node }.toList
 
-        val local = new NodeSteps(
-          methodVertex
-            .out(EdgeTypes.CONTAINS)
-            .hasLabel(NodeTypes.BLOCK)
-            .out(EdgeTypes.AST)
-            .hasLabel(NodeTypes.LOCAL)
-            .cast[nodes.Local])
-        val sink = local.evalType(".*").referencingIdentifiers.dedup
-        val source = new NodeSteps(methodVertex.out(EdgeTypes.CONTAINS).hasLabel(NodeTypes.CALL).cast[nodes.Call]).nameNot("<operator>.*").dedup
+        val cdgChildren = cfgChildren.filter { node =>
+          node.inE(EdgeTypes.CDG).hasNext || node.outE(EdgeTypes.CDG).hasNext
+        }
+        
+        val ddgChildren = cfgChildren.filter { node =>
+          node.inE(EdgeTypes.REACHING_DEF).hasNext || node.outE(EdgeTypes.REACHING_DEF).hasNext
+        }
 
-        val pdgChildren = List.empty
-
-        GraphForFuncsFunction(methodName, methodFile, methodId, astChildren, cfgChildren, pdgChildren.distinct)
+        GraphForFuncsFunction(methodName, methodFile, methodId, astChildren, cfgChildren, cdgChildren, ddgChildren)
       }.l
     ).asJson
 
   val jsonStr = resultJson.noSpaces
   new PrintWriter(outputFile) { write(jsonStr); close() }
+  cpg.close()
   println(s"Output written to $outputFile")
 }
