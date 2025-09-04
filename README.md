@@ -1,5 +1,7 @@
 # Devign
 
+### The code works with Joern version v1.0.170.
+
 Implementation of Devign Model in Python with code for processing the dataset and generation of Code Property Graphs.
 ###### This project is under development. For now, just the Abstract Syntax Tree is considered for the graph embedding of code and model training.
 
