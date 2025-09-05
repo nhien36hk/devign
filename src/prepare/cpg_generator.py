@@ -22,8 +22,8 @@ def funcs_to_graphs(funcs_path):
 
 def graph_indexing(graph):
     idx = int(graph["file"].split(".c")[0].split("/")[-1])
-    del graph["file"]
-    return idx, {"functions": [graph]}
+    # Keep the new format structure
+    return idx, graph
 
 
 def joern_parse(joern_path, input_path, output_path, file_name):
@@ -32,7 +32,7 @@ def joern_parse(joern_path, input_path, output_path, file_name):
         return out_file
     env = os.environ.copy()
     env["JAVA_TOOL_OPTIONS"] = "-Xmx12g -Xms2g"
-    joern_parse_call = subprocess.run(["./" + joern_path + "joern-parse", input_path, "--out", output_path + out_file],
+    joern_parse_call = subprocess.run(["./" + joern_path + "joern-parse", input_path, "-o", output_path + out_file],
                                       stdout=subprocess.PIPE, text=True, check=True, env=env)
     print(str(joern_parse_call))
     return out_file
@@ -88,7 +88,9 @@ def json_process(in_path, json_file):
             cpg_string = jf.read()
             cpg_string = re.sub(r"io\.shiftleft\.codepropertygraph\.generated\.", '', cpg_string)
             cpg_json = json.loads(cpg_string)
-            container = [graph_indexing(graph) for graph in cpg_json["functions"] if graph["file"] != "N/A"]
+            # Adapt to new JSON format - direct array instead of {"functions": []}
+            functions_list = cpg_json if isinstance(cpg_json, list) else cpg_json.get("functions", [])
+            container = [graph_indexing(graph) for graph in functions_list if graph["file"] != "N/A"]
             return container
     return None
 
