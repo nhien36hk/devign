@@ -1,109 +1,94 @@
-/* graph-for-funcs.scala
-
-   This script returns a Json representation of the graph resulting in combining the
-   AST, CGF, and PDG for each method contained in the currently loaded CPG.
-
-   Input: A valid CPG
-   Output: Json
-
-   Running the Script
-   ------------------
-   see: README.md
-
-   The JSON generated has the following keys:
-
-   "functions": Array of all methods contained in the currently loaded CPG
-     |_ "function": Method name as String
-     |_ "id": Method id as String (String representation of the underlying Method node)
-     |_ "AST": see ast-for-funcs script
-     |_ "CFG": see cfg-for-funcs script
-     |_ "PDG": see pdg-for-funcs script
- */
-
 import scala.jdk.CollectionConverters._
-
-import io.circe.syntax._
-import io.circe.generic.semiauto._
-import io.circe.{Encoder, Json}
-
-import io.shiftleft.semanticcpg.language.types.expressions.generalizations.CfgNode
-import io.shiftleft.codepropertygraph.generated.EdgeTypes
-import io.shiftleft.codepropertygraph.generated.NodeTypes
-import io.shiftleft.codepropertygraph.generated.nodes
-import io.shiftleft.dataflowengineoss.language._
 import io.shiftleft.semanticcpg.language._
-import io.shiftleft.semanticcpg.language.types.expressions.Call
-import io.shiftleft.semanticcpg.language.types.structure.Local
-import io.shiftleft.codepropertygraph.generated.nodes.MethodParameterIn
+import io.shiftleft.codepropertygraph.generated.nodes
+import overflowdb.traversal._
+import upickle.default._
+import upickle.default.{ReadWriter => RW, macroRW}
+import java.io.PrintWriter
 import io.shiftleft.codepropertygraph.Cpg
 
-import overflowdb._
-import overflowdb.traversal._
+case class NodeInfo(
+    id: String,
+    label: String,
+    line: Int,
+    column: Int,
+    code: String
+)
 
-import java.io.PrintWriter
+case class FunctionGraph(
+    name: String, 
+    file: String, 
+    id: String,
+    nodes: List[NodeInfo],
+    ast_edges: List[List[Long]],
+    cfg_edges: List[List[Long]],
+    cdg_edges: List[List[Long]],
+    ddg_edges: List[List[Long]]
+)
 
-final case class GraphForFuncsFunction(function: String,
-                                       file: String,
-                                       id: String,
-                                       AST: List[nodes.AstNode],
-                                       CFG: List[nodes.AstNode],
-                                       CDG: List[nodes.AstNode],
-                                       DDG: List[nodes.AstNode])
-final case class GraphForFuncsResult(functions: List[GraphForFuncsFunction])
+object NodeInfo {
+  implicit val rw: RW[NodeInfo] = macroRW
+}
 
-implicit val encodeEdge: Encoder[OdbEdge] =
-  (edge: OdbEdge) =>
-    Json.obj(
-      ("id", Json.fromString(edge.toString)),
-      ("in", Json.fromString(edge.inNode.toString)),
-      ("out", Json.fromString(edge.outNode.toString))
-    )
-
-implicit val encodeNode: Encoder[nodes.AstNode] =
-  (node: nodes.AstNode) =>
-    Json.obj(
-      ("id", Json.fromString(node.toString)),
-      ("edges",
-        Json.fromValues((node.inE("AST", "CFG", "CDG", "REACHING_DEF").l ++ node.outE("AST", "CFG", "CDG", "REACHING_DEF").l).map(_.asJson))),
-      ("properties", Json.fromValues(node.propertyMap.asScala.toList.map { case (key, value) =>
-        Json.obj(
-          ("key", Json.fromString(key)),
-          ("value", Json.fromString(value.toString))
-        )
-      }))
-    )
-
-implicit val encodeFuncFunction: Encoder[GraphForFuncsFunction] = deriveEncoder
-implicit val encodeFuncResult: Encoder[GraphForFuncsResult] = deriveEncoder
+object FunctionGraph {
+  implicit val rw: RW[FunctionGraph] = macroRW
+}
 
 @main def main(cpgFile: String, outputFile: String): Unit = {
   val cpg = Cpg.withStorage(cpgFile)
+  
+  try {
+    val functionGraphs = cpg.method.l
+      .filter(_.name != "<global>")
+      .filter(_.location.filename != "<empty>") 
+      .map { method =>
 
-  val resultJson =
-    GraphForFuncsResult(
-      cpg.method.map { method =>
         val methodName = method.fullName
-        val methodId = method.toString
         val methodFile = method.location.filename
-        val methodVertex: Vertex = method
+        val methodId = method.id.toString
 
-        val astChildren = method.astMinusRoot.l
-        val cfgChildren = method.out(EdgeTypes.CONTAINS).asScala.collect { case node: nodes.CfgNode => node }.toList
-
-        val cdgChildren = cfgChildren.filter { node =>
-          node.inE(EdgeTypes.CDG).hasNext || node.outE(EdgeTypes.CDG).hasNext
-        }
+        val allNodes = method.ast.l.distinct
         
-        val ddgChildren = cfgChildren.filter { node =>
-          node.inE(EdgeTypes.REACHING_DEF).hasNext || node.outE(EdgeTypes.REACHING_DEF).hasNext
+        val nodes = allNodes.map { node =>
+          val lineNum = try { node.property("LINE_NUMBER").asInstanceOf[Int] } catch { case _: Exception => 0 }
+          val colNum = try { node.property("COLUMN_NUMBER").asInstanceOf[Int] } catch { case _: Exception => 0 }
+          val codeStr = try { node.property("CODE").asInstanceOf[String] } catch { case _: Exception => "" }
+          
+          NodeInfo(
+            id = node.id.toString,
+            label = node.label,
+            line = lineNum,
+            column = colNum,
+            code = codeStr
+          )
         }
 
-        GraphForFuncsFunction(methodName, methodFile, methodId, astChildren, cfgChildren, cdgChildren, ddgChildren)
-      }.l
-    ).asJson
+        val astEdges = method.ast.flatMap(n => n.outE("AST").map(e => List(e.outNode.id, e.inNode.id))).l
 
-  val jsonStr = resultJson.noSpaces
-  new PrintWriter(outputFile) { write(jsonStr); close() }
-  cpg.close()
-  println(s"Output written to $outputFile")
+        val cfgNodesList = method.ast.isCfgNode.l
+        val cfgEdges = cfgNodesList.flatMap(n => n.outE("CFG").map(e => List(e.outNode.id, e.inNode.id)))
+
+        val cdgEdges = cfgNodesList.flatMap(n => n.controlledBy.map(controller => List(controller.id, n.id)))
+
+        val ddgEdges = cfgNodesList.flatMap(n => n.outE("REACHING_DEF").map(e => List(e.outNode.id, e.inNode.id)))
+        
+        FunctionGraph(
+          name = methodName,
+          file = methodFile,
+          id = methodId,
+          nodes = nodes,
+          ast_edges = astEdges,
+          cfg_edges = cfgEdges,
+          cdg_edges = cdgEdges,
+          ddg_edges = ddgEdges
+        )
+      }
+
+    val jsonString = upickle.default.write(functionGraphs, indent = 2)
+    new PrintWriter(outputFile) { write(jsonString); close() }
+    println(s"Output successfully written to ${outputFile}")
+    
+  } finally {
+    cpg.close()
+  }
 }
