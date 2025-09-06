@@ -17,12 +17,15 @@ from argparse import ArgumentParser
 import numpy as np
 import pandas as pd
 from gensim.models.word2vec import Word2Vec
+from tree_sitter import Parser
+from tree_sitter_languages import get_parser
 
 import configs
 import src.data as data
 import src.prepare as prepare
 import src.process as process
 import src.utils.functions.cpg as cpg
+from src.utils.functions.token import extract_functions, tokens_from_node
 
 PATHS = configs.Paths()
 FILES = configs.Files()
@@ -42,7 +45,7 @@ def create_task():
     print("Total Functions: ", len(filtered))
     data.drop(filtered, ["commit_id", "project"])
     slices = data.slice_frame(filtered, context.slice_size)
-    slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
+    slices = [(s, slice.apply(lambda x: x)) for s, slice in slices][:1]
 
     cpg_files = []
     # cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
@@ -75,12 +78,45 @@ def create_task():
         gc.collect()
 
 
+def pretrain_task():
+    context = configs.Embed()
+    parser = get_parser("c")
+    dataset_files = data.get_directory_files(PATHS.cpg)
+    w2vmodel = Word2Vec(**context.w2v_args)
+    total_tokens = 0
+    tokens_list = []
+    for pkl_file in dataset_files:
+        print(f"Tokenizing dataset from {pkl_file}...")
+        cpg_dataset = data.load(PATHS.cpg, pkl_file)
+        # Concatenate all function codes into one buffer to parse once
+        codes = [code for code in cpg_dataset["func"] if isinstance(code, str)]
+        joined_code = "\n\n".join(codes)
+        code_bytes = joined_code.encode("utf-8", errors="ignore")
+        func_nodes = extract_functions(code_bytes, parser)
+        print("Total functions before extract_functions: ", len(codes))
+        print("Total functions after extract_functions: ", len(func_nodes))
+        for fn in func_nodes:
+            toks = tokens_from_node(code_bytes, fn)
+            if toks:
+                total_tokens += len(toks)
+                tokens_list.append(toks)
+    print("Total tokens: ", total_tokens)
+    w2vmodel.build_vocab(corpus_iterable=tokens_list, update=False)
+    w2vmodel.train(corpus_iterable=tokens_list, total_examples=w2vmodel.corpus_count, epochs=20)
+    print("Saving w2vmodel.")
+    w2vmodel.save(f"{PATHS.w2v}/{FILES.w2v}")
+
+
 def embed_task():
     context = configs.Embed()
     # Tokenize source code into tokens
     dataset_files = data.get_directory_files(PATHS.cpg)
-    w2vmodel = Word2Vec(**context.w2v_args)
-    w2v_init = True
+    # Load pretrained Word2Vec model (trained via pretrain_task)
+    w2v_path = f"{PATHS.w2v}/{FILES.w2v}"
+    if not os.path.exists(w2v_path):
+        raise FileNotFoundError(f"Pretrained Word2Vec not found at {w2v_path}. Run with -pt/--pretrain first.")
+    from gensim.models import Word2Vec as _Word2Vec
+    w2vmodel = _Word2Vec.load(w2v_path)
     for pkl_file in dataset_files:
         file_name = pkl_file.split(".")[0]
         # Check if input file are already created 
@@ -89,28 +125,13 @@ def embed_task():
             continue
         print(f"Processing {pkl_file}...")
         cpg_dataset = data.load(PATHS.cpg, pkl_file)
-        tokens_dataset = data.tokenize(cpg_dataset)
-        data.write(tokens_dataset, PATHS.tokens, f"{file_name}_{FILES.tokens}")
-        # Convert tokens to list for Word2Vec (Gensim 4.x compatibility)
-        tokens_list = tokens_dataset.tokens.tolist()
-        # word2vec used to learn the initial embedding of each token
-        w2vmodel.build_vocab(corpus_iterable=tokens_list, update=not w2v_init)
-        w2vmodel.train(corpus_iterable=tokens_list, total_examples=w2vmodel.corpus_count, epochs=10)
-        if w2v_init:
-            w2v_init = False
-        # Embed cpg to node representation and pass to graph data structure
-        cpg_dataset["nodes"] = cpg_dataset.apply(lambda row: cpg.parse_to_nodes(row.cpg, context.nodes_dim), axis=1)
-        # remove rows with no nodes
-        cpg_dataset = cpg_dataset.loc[cpg_dataset.nodes.map(len) > 0]
-        cpg_dataset["input"] = cpg_dataset.apply(lambda row: prepare.nodes_to_input(row.nodes, row.target, context.nodes_dim,
-                                                                                    w2vmodel.wv, context.edge_type), axis=1)
-        data.drop(cpg_dataset, ["nodes"])
+        cpg_dataset["input"] = cpg_dataset.apply(lambda row: prepare.nodes_to_input(row.cpg, row.target, context.nodes_dim,
+                                                                                    w2vmodel.wv), axis=1)
+        data.drop(cpg_dataset, ["cpg"])
         print(f"Saving input dataset {file_name} with size {len(cpg_dataset)}.")
         data.write(cpg_dataset[["input", "target", "func"]], PATHS.input, input_file)
         del cpg_dataset
         gc.collect()
-    print("Saving w2vmodel.")
-    w2vmodel.save(f"{PATHS.w2v}/{FILES.w2v}")
 
 def process_task(stopping):
     context = configs.Process()
@@ -218,6 +239,7 @@ def main():
     parser: ArgumentParser = argparse.ArgumentParser()
     # parser.add_argument('-p', '--prepare', help='Prepare task', required=False)
     parser.add_argument('-c', '--create', action='store_true')
+    parser.add_argument('-pt', '--pretrain', action='store_true')
     parser.add_argument('-e', '--embed', action='store_true')
     parser.add_argument('-p', '--process', action='store_true')
     parser.add_argument('-pS', '--process_stopping', action='store_true')
@@ -228,6 +250,8 @@ def main():
 
     if args.create:
         create_task()
+    if args.pretrain:
+        pretrain_task()
     if args.embed:
         embed_task()
     if args.process:
