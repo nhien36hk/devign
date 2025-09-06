@@ -88,7 +88,6 @@ def json_process(in_path, json_file):
             cpg_string = jf.read()
             cpg_string = re.sub(r"io\.shiftleft\.codepropertygraph\.generated\.", '', cpg_string)
             cpg_json = json.loads(cpg_string)
-            # Adapt to new JSON format - direct array instead of {"functions": []}
             functions_list = cpg_json if isinstance(cpg_json, list) else cpg_json.get("functions", [])
             container = [graph_indexing(graph) for graph in functions_list if graph["file"] != "N/A"]
             return container

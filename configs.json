@@ -16,7 +16,7 @@
     },
     "create" : {
         "filter_column_value": {"project" : "qemu"},
-        "slice_size": 1000,
+        "slice_size": 10,
         "joern_cli_dir": "joern/joern-cli/"
     },
     "paths" : {
@@ -38,10 +38,10 @@
     },
     "embed" : {
         "nodes_dim" : 205,
-        "word2vec_args": {"vector_size" : 100, "alpha" : 0.01, "window" : 5, "min_count" : 3, "sample" : 1e-5,
-                "workers" : 4, "sg" : 1, "hs" : 0, "negative" : 5
+        "word2vec_args": {"vector_size" : 100, "alpha" : 0.01, "window" : 8, "min_count" : 2, "sample" : 1e-5,
+                "workers" : 8, "sg" : 1, "hs" : 0, "negative" : 10
             },
-        "edge_type": "Ast"
+        "edge_type": "ast_edges,cfg_edges,cdg_edges,ddg_edges"
     },
     "process" : {
         "epochs" : 50,

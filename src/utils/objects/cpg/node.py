@@ -18,7 +18,7 @@ operators = ['addition', 'addressOf', 'and', 'arithmeticShiftRight', 'assignment
 
 node_labels += operators
 
-node_labels = {label: i for i, label in enumerate(node_labels)}
+node_labels = {label.lower(): i for i, label in enumerate(node_labels)}
 
 PRINT_PROPS = True
 
@@ -79,3 +79,10 @@ class Node:
         if self.type is None:
             logger.log_warning("node", f"LABEL {self.label} not in labels!")
             self.type = len(node_labels) + 1
+
+def get_type(label):
+    type = node_labels.get(label.lower())
+    if type is None:
+        logger.log_warning("node", f"LABEL {label} not in labels!")
+        type = len(node_labels) + 1
+    return type

@@ -1,8 +1,5 @@
 # Devign
 
-## The code works with Joern version v1.1.500 and Java version 17 JDK.
-Link Download Joern for Linux/MacOs ``` https://github.com/joernio/joern/releases/download/v1.1.500/joern-cli.zip ```
-
 Implementation of Devign Model in Python with code for processing the dataset and generation of Code Property Graphs.
 ###### This project is under development. For now, just the Abstract Syntax Tree is considered for the graph embedding of code and model training.
 
@@ -37,7 +34,8 @@ These instructions will get you a copy of the project up and running on your loc
 Install the necessary dependencies before running the project:
 <br/>
 ##### Software:
-* [Joern](https://joern.io/docs/)
+* [Joern (==v1.1.500)](https://github.com/joernio/joern/releases/download/v1.1.500/joern-cli.zip)
+* [Java (==17)](https://www.oracle.com/java/technologies/downloads/)
 * [Python (=>3.6)](https://www.python.org/)
 ##### Python Libraries:
 * [Pandas (>=1.0.1)](https://pandas.pydata.org/)
@@ -46,6 +44,8 @@ Install the necessary dependencies before running the project:
 * [PyTorch Geometric (>=1.4.2)](https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html)
 * [Gensim (>=3.8.1)](https://radimrehurek.com/gensim/)
 * [cpgclientlib (>=0.11.111)](https://pypi.org/project/cpgclientlib/)
+* [Tree-sitter (==0.20.4)](https://tree-sitter.github.io/tree-sitter/)
+* [Tree-sitter-languages (==1.9.1)](https://tree-sitter.github.io/tree-sitter/)
 
 ### Notes
 

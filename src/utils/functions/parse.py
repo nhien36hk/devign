@@ -125,7 +125,11 @@ def tokenizer(code, flag=False):
     code = no_char_lit_line
 
     if flag:
-        code = codecs.getdecoder("unicode_escape")(no_char_lit_line)[0]
+        try:
+            code = codecs.getdecoder("unicode_escape")(no_char_lit_line)[0]
+        except UnicodeDecodeError as e:
+            print(f"Unicode decode error: {e}")
+            code = no_char_lit_line  # Fallback to original code
 
     for line in code.splitlines():
         if line == '':
@@ -158,9 +162,3 @@ def tokenizer(code, flag=False):
         tokenized.extend(cg)
 
     return tokenized
-
-#test = "((uint32_t *)(&s->boncop))[addr/sizeof(uint32_t)]"
-#test2 = "(type_code[hw_breakpoint[n].type] << (16 + n*4)) |\n\n                ((uint32_t)len_code[hw_breakpoint[n].len] << (18 + n*4))"
-#asd = re.split(regex_split_operators + r'|(\/)', test)
-#print(list(filter(None,asd)))
-#print(tokenizer(test2))

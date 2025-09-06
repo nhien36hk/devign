@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Data
 from src.utils.functions.parse import tokenizer
-from src.utils import log as logger
+from src.utils.objects.cpg.node import get_type
 from gensim.models.keyedvectors import Word2VecKeyedVectors
 
 
@@ -11,100 +11,107 @@ class NodesEmbedding:
         self.w2v_keyed_vectors = w2v_keyed_vectors
         self.kv_size = w2v_keyed_vectors.vector_size
         self.nodes_dim = nodes_dim
+        self.mapping = {} 
 
         assert self.nodes_dim >= 0
-
-        # Buffer for embeddings with padding
-        self.target = torch.zeros(self.nodes_dim, self.kv_size + 1).float()
 
     def __call__(self, nodes):
         embedded_nodes = self.embed_nodes(nodes)
         nodes_tensor = torch.from_numpy(embedded_nodes).float()
 
-        self.target[:nodes_tensor.size(0), :] = nodes_tensor
+        return nodes_tensor
 
-        return self.target
 
     def embed_nodes(self, nodes):
         embeddings = []
 
-        for n_id, node in nodes.items():
+        for i, node in enumerate(nodes):
+            node_id = node["id"]
+            self.mapping[node_id] = i
+            
             # Get node's code
-            node_code = node.get_code()
+            node_code = node.get("code", "")
             # Tokenize the code
-            tokenized_code = tokenizer(node_code, True)
-            if not tokenized_code:
-                # print(f"Dropped node {node}: tokenized code is empty.")
+            tokens = tokenizer(node_code, True)
+            if not tokens:
                 msg = f"Empty TOKENIZED from node CODE {node_code}"
-                logger.log_warning('embeddings', msg)
+                print(msg)
                 continue
+                
             # Get each token's learned embedding vector
-            vectorized_code = np.array(self.get_vectors(tokenized_code, node))
+            vectors = np.array(self.get_vectors(tokens, node))
             # The node's source embedding is the average of it's embedded tokens
-            source_embedding = np.mean(vectorized_code, 0)
+            src_embed = np.mean(vectors, 0)
             # The node representation is the concatenation of label and source embeddings
-            embedding = np.concatenate((np.array([node.type]), source_embedding), axis=0)
-            embeddings.append(embedding)
-        # print(node.label, node.properties.properties.get("METHOD_FULL_NAME"))
+            node_type = get_type(node["label"])
+            embed = np.concatenate((np.array([node_type]), src_embed), axis=0)
+            embeddings.append(embed)
 
         return np.array(embeddings)
 
-    # fromTokenToVectors
-    def get_vectors(self, tokenized_code, node):
+    def get_vectors(self, tokens, node):
         vectors = []
+        node_label = node["label"]
+        node_code = node.get("code", "")
 
-        for token in tokenized_code:
-            # Gensim 4.x compatibility: use key_to_index instead of vocab
+        for token in tokens:
             if token in self.w2v_keyed_vectors.key_to_index:
                 vectors.append(self.w2v_keyed_vectors[token])
             else:
-                # print(node.label, token, node.get_code(), tokenized_code)
                 vectors.append(np.zeros(self.kv_size))
-                if node.label not in ["Identifier", "Literal", "MethodParameterIn", "MethodParameterOut"]:
-                    msg = f"No vector for TOKEN {token} in {node.get_code()}."
-                    logger.log_warning('embeddings', msg)
+                if node_label not in ["IDENTIFIER", "LITERAL", "METHOD_PARAMETER_IN", "METHOD_PARAMETER_OUT"]:
+                    msg = f"No vector for TOKEN {token} in {node_code}."
+                    print(msg)
 
         return vectors
 
 
 class GraphsEmbedding:
-    def __init__(self, edge_type):
-        self.edge_type = edge_type
+    def __init__(self, id_mapping):
+        self.id_mapping = id_mapping
 
-    def __call__(self, nodes):
-        connections = self.nodes_connectivity(nodes)
+    def __call__(self, edges):
+        return torch.tensor(self.build_connections(edges)).long()
 
-        return torch.tensor(connections).long()
-
-    # nodesToGraphConnectivity
-    def nodes_connectivity(self, nodes):
-        # nodes are ordered by line and column
+    def build_connections(self, edges):
         coo = [[], []]
-
-        for node_idx, (node_id, node) in enumerate(nodes.items()):
-            if node_idx != node.order:
-                raise Exception("Something wrong with the order")
-
-            for e_id, edge in node.edges.items():
-                edge_type = [et for et in self.edge_type.split(",")]
-
-                if edge.type not in edge_type:
-                    continue
-
-                if edge.node_in in nodes and edge.node_in != node_id:
-                    coo[0].append(nodes[edge.node_in].order)
-                    coo[1].append(node_idx)
-
-                if edge.node_out in nodes and edge.node_out != node_id:
-                    coo[0].append(node_idx)
-                    coo[1].append(nodes[edge.node_out].order)
-
+        
+        for edge in edges:
+            src_id, tgt_id = edge[0], edge[1]
+            
+            if src_id in self.id_mapping and tgt_id in self.id_mapping:
+                src_idx = self.id_mapping[src_id]
+                tgt_idx = self.id_mapping[tgt_id]
+                coo[0].append(src_idx)
+                coo[1].append(tgt_idx)
+            else:
+                print(f"Edge {src_id} or {tgt_id} not in id_mapping")
+                
         return coo
 
 
-def nodes_to_input(nodes, target, nodes_dim, keyed_vectors, edge_type):
-    nodes_embedding = NodesEmbedding(nodes_dim, keyed_vectors)
-    graphs_embedding = GraphsEmbedding(edge_type)
+def nodes_to_input(cpg, target, nodes_dim, keyed_vectors):
+
+    node_embed = NodesEmbedding(nodes_dim, keyed_vectors)
+    x = node_embed(cpg["nodes"])
+    
+    graph_embed = GraphsEmbedding(node_embed.mapping)
     label = torch.tensor([target]).float()
 
-    return Data(x=nodes_embedding(nodes), edge_index=graphs_embedding(nodes), y=label)
+    # Combine all edge types into single edge_index
+    all_edges = []
+    if "ast_edges" in cpg:
+        all_edges.extend(cpg["ast_edges"])
+    if "cfg_edges" in cpg:
+        all_edges.extend(cpg["cfg_edges"])
+    if "cdg_edges" in cpg:
+        all_edges.extend(cpg["cdg_edges"])
+    if "ddg_edges" in cpg:
+        all_edges.extend(cpg["ddg_edges"])
+    
+    edge_index = graph_embed(all_edges)
+
+    return Data(
+        x=x,
+        edge_index=edge_index,
+        y=label)
