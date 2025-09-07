@@ -115,8 +115,8 @@ def nodes_to_input(cpg, target, nodes_dim, keyed_vectors):
 
     return Data(
         x=x,
-        ast_edges=ast_edges,
-        cfg_edges=cfg_edges,
-        cdg_edges=cdg_edges,
-        ddg_edges=ddg_edges,
+        ast_edge_index=ast_edges,
+        cfg_edge_index=cfg_edges,
+        cdg_edge_index=cdg_edges,
+        ddg_edge_index=ddg_edges,
         y=label)
