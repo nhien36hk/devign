@@ -1,9 +1,10 @@
 import numpy as np
 import torch
 from torch_geometric.data import Data
-from src.utils.functions.parse import tokenizer
 from src.utils.objects.cpg.node import get_type
 from gensim.models.keyedvectors import Word2VecKeyedVectors
+from src.utils.functions.token import tokens_from_node, parser_for_path
+from tree_sitter_languages import get_parser
 
 
 class NodesEmbedding:
@@ -12,6 +13,7 @@ class NodesEmbedding:
         self.kv_size = w2v_keyed_vectors.vector_size
         self.nodes_dim = nodes_dim
         self.mapping = {} 
+        self.parser = get_parser("c")
 
         assert self.nodes_dim >= 0
 
@@ -31,15 +33,18 @@ class NodesEmbedding:
             
             # Get node's code
             node_code = node.get("code", "")
-            # Tokenize the code
-            tokens = tokenizer(node_code, True)
-            if not tokens:
-                msg = f"Empty TOKENIZED from node CODE {node_code}"
-                print(msg)
+            if not node_code:
+                embeddings.append(np.zeros(self.kv_size + 1))
+                continue
+                
+            # Tokenize using tree-sitter
+            tokens = self.tokenize_node_code(node_code)
+            if not tokens:  
+                embeddings.append(np.zeros(self.kv_size + 1))
                 continue
                 
             # Get each token's learned embedding vector
-            vectors = np.array(self.get_vectors(tokens, node))
+            vectors = np.array(self.get_vectors(tokens))
             # The node's source embedding is the average of it's embedded tokens
             src_embed = np.mean(vectors, 0)
             # The node representation is the concatenation of label and source embeddings
@@ -49,21 +54,26 @@ class NodesEmbedding:
 
         return np.array(embeddings)
 
-    def get_vectors(self, tokens, node):
+    def get_vectors(self, tokens):
         vectors = []
-        node_label = node["label"]
-        node_code = node.get("code", "")
 
         for token in tokens:
             if token in self.w2v_keyed_vectors.key_to_index:
                 vectors.append(self.w2v_keyed_vectors[token])
             else:
                 vectors.append(np.zeros(self.kv_size))
-                if node_label not in ["IDENTIFIER", "LITERAL", "METHOD_PARAMETER_IN", "METHOD_PARAMETER_OUT"]:
-                    msg = f"No vector for TOKEN {token} in {node_code}."
-                    print(msg)
 
         return vectors
+
+    def tokenize_node_code(self, node_code):
+        try:
+            code_bytes = node_code.encode("utf-8", errors="ignore")
+            tree = self.parser.parse(code_bytes)
+            tokens = tokens_from_node(code_bytes, tree.root_node)
+            return tokens
+        except Exception as e:
+            print(f"Error tokenizing node code '{node_code}': {e}")
+            return []
 
 
 class GraphsEmbedding:
@@ -97,21 +107,16 @@ def nodes_to_input(cpg, target, nodes_dim, keyed_vectors):
     
     graph_embed = GraphsEmbedding(node_embed.mapping)
     label = torch.tensor([target]).float()
-
-    # Combine all edge types into single edge_index
-    all_edges = []
-    if "ast_edges" in cpg:
-        all_edges.extend(cpg["ast_edges"])
-    if "cfg_edges" in cpg:
-        all_edges.extend(cpg["cfg_edges"])
-    if "cdg_edges" in cpg:
-        all_edges.extend(cpg["cdg_edges"])
-    if "ddg_edges" in cpg:
-        all_edges.extend(cpg["ddg_edges"])
     
-    edge_index = graph_embed(all_edges)
+    ast_edges = graph_embed(cpg["ast_edges"])
+    cfg_edges = graph_embed(cpg["cfg_edges"])
+    cdg_edges = graph_embed(cpg["cdg_edges"])
+    ddg_edges = graph_embed(cpg["ddg_edges"])
 
     return Data(
         x=x,
-        edge_index=edge_index,
+        ast_edges=ast_edges,
+        cfg_edges=cfg_edges,
+        cdg_edges=cdg_edges,
+        ddg_edges=ddg_edges,
         y=label)
