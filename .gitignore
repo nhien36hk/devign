@@ -6,6 +6,7 @@ __pycache__/
 # C extensions
 *.so
 *.c
+*.zip
 
 # Model
 *.model
@@ -40,6 +41,7 @@ joern/joern-cli/
 *.bin
 *.pkl
 devign_env/
+
 
 
 

@@ -45,7 +45,7 @@ def create_task():
     print("Total Functions: ", len(filtered))
     data.drop(filtered, ["commit_id", "project"])
     slices = data.slice_frame(filtered, context.slice_size)
-    slices = [(s, slice.apply(lambda x: x)) for s, slice in slices][:1]
+    slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
 
     cpg_files = []
     # cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]

@@ -4,20 +4,7 @@ import subprocess
 import os.path
 import os
 import time
-from .cpg_client_wrapper import CPGClientWrapper
 from ..data import datamanager as data
-
-
-def funcs_to_graphs(funcs_path):
-    client = CPGClientWrapper()
-    # query the cpg for the dataset
-    print(f"Creating CPG.")
-    graphs_string = client(funcs_path)
-    # removes unnecessary namespace for object references
-    graphs_string = re.sub(r"io\.shiftleft\.codepropertygraph\.generated\.", '', graphs_string)
-    graphs_json = json.loads(graphs_string)
-
-    return graphs_json["functions"]
 
 
 def graph_indexing(graph):
