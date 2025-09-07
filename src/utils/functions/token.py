@@ -90,10 +90,13 @@ def tokens_from_node(code, node):
 def extract_functions(code_bytes, parser):
     tree = parser.parse(code_bytes)
     root = tree.root_node
+    stack = [root]
     funcs = []
     
-    for child in root.children:
-        if is_function_node(child):
-            funcs.append(child)
-    
+    while stack:
+        n = stack.pop()
+        if is_function_node(n):
+            funcs.append(n)
+        for i in range(n.child_count - 1, -1, -1):
+            stack.append(n.children[i])
     return funcs

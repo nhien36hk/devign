@@ -16,7 +16,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import pandas as pd
-from gensim.models.word2vec import Word2Vec
+from gensim.models import Word2Vec
 from tree_sitter import Parser
 from tree_sitter_languages import get_parser
 
@@ -93,8 +93,6 @@ def pretrain_task():
         joined_code = "\n\n".join(codes)
         code_bytes = joined_code.encode("utf-8", errors="ignore")
         func_nodes = extract_functions(code_bytes, parser)
-        print("Total functions before extract_functions: ", len(codes))
-        print("Total functions after extract_functions: ", len(func_nodes))
         for fn in func_nodes:
             toks = tokens_from_node(code_bytes, fn)
             if toks:
@@ -115,8 +113,8 @@ def embed_task():
     w2v_path = f"{PATHS.w2v}/{FILES.w2v}"
     if not os.path.exists(w2v_path):
         raise FileNotFoundError(f"Pretrained Word2Vec not found at {w2v_path}. Run with -pt/--pretrain first.")
-    from gensim.models import Word2Vec as _Word2Vec
-    w2vmodel = _Word2Vec.load(w2v_path)
+
+    w2vmodel = Word2Vec.load(w2v_path)
     for pkl_file in dataset_files:
         file_name = pkl_file.split(".")[0]
         # Check if input file are already created 
