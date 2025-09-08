@@ -2,10 +2,10 @@ import scala.jdk.CollectionConverters._
 import io.shiftleft.semanticcpg.language._
 import io.shiftleft.codepropertygraph.generated.nodes
 import overflowdb.traversal._
-import upickle.default._
-import upickle.default.{ReadWriter => RW, macroRW}
 import java.io.PrintWriter
 import io.shiftleft.codepropertygraph.Cpg
+import upickle.default._
+import upickle.default.{ReadWriter => RW, macroRW}
 
 case class NodeInfo(
     id: String,
@@ -15,72 +15,88 @@ case class NodeInfo(
     code: String
 )
 
-case class FunctionGraph(
-    name: String, 
-    file: String, 
+case class HeteroFunctionGraph(
+    name: String,
+    file: String,
     id: String,
-    nodes: List[NodeInfo],
-    ast_edges: List[List[Long]],
-    cfg_edges: List[List[Long]],
-    cdg_edges: List[List[Long]],
-    ddg_edges: List[List[Long]]
+    nodes: Map[String, List[NodeInfo]],
+    edges: Map[String, List[List[String]]]
 )
 
 object NodeInfo {
   implicit val rw: RW[NodeInfo] = macroRW
 }
 
-object FunctionGraph {
-  implicit val rw: RW[FunctionGraph] = macroRW
+object HeteroFunctionGraph {
+  implicit val rw: RW[HeteroFunctionGraph] = macroRW
 }
 
 @main def main(cpgFile: String, outputFile: String): Unit = {
   val cpg = Cpg.withStorage(cpgFile)
   
   try {
+    val vipNodeLabels = Set(
+      "METHOD", 
+      "CALL", 
+      "IDENTIFIER", 
+      "LITERAL",
+      "CONTROL_STRUCTURE"
+    )
+
+    val returnNodeLabels = Set(
+      "METHOD_RETURN",
+      "RETURN",
+    )
+
     val functionGraphs = cpg.method.l
-      .filter(_.name != "<global>")
-      .filter(_.location.filename != "<empty>") 
+      .filterNot(_.name == "<global>")
+      .filterNot(_.location.filename == "<empty>") 
       .map { method =>
 
-        val methodName = method.fullName
-        val methodFile = method.location.filename
-        val methodId = method.id.toString
-
-        val allNodes = method.ast.l.distinct
+        val allNodesInMethod = method.ast.l.distinct
         
-        val nodes = allNodes.map { node =>
-          val lineNum = try { node.property("LINE_NUMBER").asInstanceOf[Int] } catch { case _: Exception => 0 }
-          val colNum = try { node.property("COLUMN_NUMBER").asInstanceOf[Int] } catch { case _: Exception => 0 }
-          val codeStr = try { node.property("CODE").asInstanceOf[String] } catch { case _: Exception => "" }
-          
-          NodeInfo(
-            id = node.id.toString,
-            label = node.label,
-            line = lineNum,
-            column = colNum,
-            code = codeStr
-          )
-        }
+        // TRÍCH XUẤT VÀ NHÓM CÁC NODE 
+        val groupedNodes = allNodesInMethod
+          .map { node =>
+            val lineNum = try { node.property("LINE_NUMBER").asInstanceOf[Int] } catch { case _: Exception => 0 }
+            val colNum = try { node.property("COLUMN_NUMBER").asInstanceOf[Int] } catch { case _: Exception => 0 }
+            val codeStr = try { node.property("CODE").asInstanceOf[String] } catch { case _: Exception => "" }
+            val label = node.label
+            
+            val finalLabel = 
+              if (vipNodeLabels.contains(label)) label
+              else if (returnNodeLabels.contains(label)) "RETURN"
+              else "OTHER_NODE"
 
-        val astEdges = method.ast.flatMap(n => n.outE("AST").map(e => List(e.outNode.id, e.inNode.id))).l
+            (finalLabel, NodeInfo(node.id.toString, node.label, lineNum, colNum, codeStr))
+          }
+          // Sử dụng groupBy để nhóm các NodeInfo theo finalLabel đã được chuẩn hóa
+          .groupBy(_._1)
+          .view.mapValues(_.map(_._2)).toMap
+
+        val astEdges = method.ast.flatMap(n => n.outE("AST").map(e => List(e.outNode.id.toString, e.inNode.id.toString))).toList
 
         val cfgNodesList = method.ast.isCfgNode.l
-        val cfgEdges = cfgNodesList.flatMap(n => n.outE("CFG").map(e => List(e.outNode.id, e.inNode.id)))
+        val cfgEdges = cfgNodesList.flatMap(n => n.outE("CFG").map(e => List(e.outNode.id.toString, e.inNode.id.toString))).toList
 
-        val cdgEdges = cfgNodesList.flatMap(n => n.controlledBy.map(controller => List(controller.id, n.id)))
+        val cdgEdges = cfgNodesList.flatMap(n => n.controlledBy.map(controller => List(controller.id.toString, n.id.toString))).toList
 
-        val ddgEdges = cfgNodesList.flatMap(n => n.outE("REACHING_DEF").map(e => List(e.outNode.id, e.inNode.id)))
+        val ddgEdges = cfgNodesList.flatMap(n => n.outE("REACHING_DEF").map(e => List(e.outNode.id.toString, e.inNode.id.toString))).toList
         
-        FunctionGraph(
-          name = methodName,
-          file = methodFile,
-          id = methodId,
-          nodes = nodes,
-          ast_edges = astEdges,
-          cfg_edges = cfgEdges,
-          cdg_edges = cdgEdges,
-          ddg_edges = ddgEdges
+        val allEdges = Map(
+            "AST" -> astEdges,
+            "CFG" -> cfgEdges,
+            "CDG" -> cdgEdges,
+            "DDG" -> ddgEdges
+        ).filter { case (_, edges) => edges.nonEmpty } 
+
+
+        HeteroFunctionGraph(
+          name = method.fullName,
+          file = method.location.filename,
+          id = method.id.toString,
+          nodes = groupedNodes,
+          edges = allEdges
         )
       }
 

@@ -45,7 +45,7 @@ def create_task():
     print("Total Functions: ", len(filtered))
     data.drop(filtered, ["commit_id", "project"])
     slices = data.slice_frame(filtered, context.slice_size)
-    slices = [(s, slice.apply(lambda x: x)) for s, slice in slices]
+    slices = [(s, slice.apply(lambda x: x)) for s, slice in slices][:2]
 
     cpg_files = []
     # cpg_files = [f for f in os.listdir(PATHS.cpg) if f.endswith('.bin')]
@@ -123,8 +123,11 @@ def embed_task():
             continue
         print(f"Processing {pkl_file}...")
         cpg_dataset = data.load(PATHS.cpg, pkl_file)
-        cpg_dataset["input"] = cpg_dataset.apply(lambda row: prepare.nodes_to_input(row.cpg, row.target, context.nodes_dim,
-                                                                                    w2vmodel.wv), axis=1)
+        input_data = []
+        for idx, row in cpg_dataset.iterrows():
+            hetero_data = prepare.nodes_to_input(row.cpg, row.target, context.nodes_dim, w2vmodel.wv)
+            input_data.append(hetero_data)
+        cpg_dataset["input"] = input_data
         data.drop(cpg_dataset, ["cpg"])
         print(f"Saving input dataset {file_name} with size {len(cpg_dataset)}.")
         data.write(cpg_dataset[["input", "target", "func"]], PATHS.input, input_file)

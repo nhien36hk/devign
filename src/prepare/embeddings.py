@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch_geometric.data import Data
+from torch_geometric.data import Data, HeteroData
 from src.utils.objects.cpg.node import get_type
 from gensim.models.keyedvectors import Word2VecKeyedVectors
 from src.utils.functions.token import tokens_from_node, parser_for_path
@@ -12,24 +12,23 @@ class NodesEmbedding:
         self.w2v_keyed_vectors = w2v_keyed_vectors
         self.kv_size = w2v_keyed_vectors.vector_size
         self.nodes_dim = nodes_dim
-        self.mapping = {} 
+        self.node_info = {}
         self.parser = get_parser("c")
 
         assert self.nodes_dim >= 0
 
-    def __call__(self, nodes):
-        embedded_nodes = self.embed_nodes(nodes)
+    def __call__(self, node_type, nodes):
+        embedded_nodes = self.embed_nodes(node_type, nodes)
         nodes_tensor = torch.from_numpy(embedded_nodes).float()
 
         return nodes_tensor
 
 
-    def embed_nodes(self, nodes):
+    def embed_nodes(self, node_type, nodes):
         embeddings = []
 
         for i, node in enumerate(nodes):
-            node_id = node["id"]
-            self.mapping[node_id] = i
+            self.node_info[node["id"]] = {"index": i, "node_type": node_type}
             
             # Get node's code
             node_code = node.get("code", "")
@@ -77,46 +76,48 @@ class NodesEmbedding:
 
 
 class GraphsEmbedding:
-    def __init__(self, id_mapping):
-        self.id_mapping = id_mapping
+    def __init__(self, node_info):
+        self.node_info = node_info
+        self.relations = {}
 
-    def __call__(self, edges):
-        return torch.tensor(self.build_connections(edges)).long()
+    def __call__(self, edge_type, edges):
+        self.build_connections(edge_type, edges)
 
-    def build_connections(self, edges):
-        coo = [[], []]
-        
+    def build_connections(self, edge_type, edges):
         for edge in edges:
-            src_id, tgt_id = edge[0], edge[1]
+            src_id, dst_id = edge[0], edge[1]
             
-            if src_id in self.id_mapping and tgt_id in self.id_mapping:
-                src_idx = self.id_mapping[src_id]
-                tgt_idx = self.id_mapping[tgt_id]
-                coo[0].append(src_idx)
-                coo[1].append(tgt_idx)
-            else:
-                print(f"Edge {src_id} or {tgt_id} not in id_mapping")
+            if src_id not in self.node_info or dst_id not in self.node_info:
+                print(f"Warning: Edge {src_id} -> {dst_id} references missing node(s)")
+                continue
                 
-        return coo
+            src_info = self.node_info[src_id]
+            dst_info = self.node_info[dst_id]
+
+            relation_key = (src_info['node_type'], edge_type, dst_info['node_type'])
+
+            if relation_key not in self.relations:
+                self.relations[relation_key] = ([], [])
+            
+            self.relations[relation_key][0].append(src_info['index'])
+            self.relations[relation_key][1].append(dst_info['index'])
 
 
 def nodes_to_input(cpg, target, nodes_dim, keyed_vectors):
+    data = HeteroData()
 
     node_embed = NodesEmbedding(nodes_dim, keyed_vectors)
-    x = node_embed(cpg["nodes"])
+    for node_type, nodes in cpg["nodes"].items():
+        data[node_type].x = node_embed(node_type, nodes)
     
-    graph_embed = GraphsEmbedding(node_embed.mapping)
-    label = torch.tensor([target]).float()
-    
-    ast_edges = graph_embed(cpg["ast_edges"])
-    cfg_edges = graph_embed(cpg["cfg_edges"])
-    cdg_edges = graph_embed(cpg["cdg_edges"])
-    ddg_edges = graph_embed(cpg["ddg_edges"])
+    graph_embed = GraphsEmbedding(node_embed.node_info)
+    data.y = torch.tensor([target]).float()
 
-    return Data(
-        x=x,
-        ast_edge_index=ast_edges,
-        cfg_edge_index=cfg_edges,
-        cdg_edge_index=cdg_edges,
-        ddg_edge_index=ddg_edges,
-        y=label)
+    for edge_type, edges in cpg["edges"].items():   
+        graph_embed(edge_type, edges)
+    
+    for relation_key, (src_indices, dst_indices) in graph_embed.relations.items():
+        src_type, edge_type, dst_type = relation_key        
+        data[src_type, edge_type, dst_type].edge_index = torch.tensor([src_indices, dst_indices], dtype=torch.long)
+    
+    return data 
