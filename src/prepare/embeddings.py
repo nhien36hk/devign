@@ -19,9 +19,7 @@ class NodesEmbedding:
 
     def __call__(self, nodes):
         embedded_nodes = self.embed_nodes(nodes)
-        nodes_tensor = torch.from_numpy(embedded_nodes).float()
-
-        return nodes_tensor
+        return torch.from_numpy(embedded_nodes).float()
 
 
     def embed_nodes(self, nodes):
@@ -113,10 +111,13 @@ def nodes_to_input(cpg, target, nodes_dim, keyed_vectors):
     cdg_edges = graph_embed(cpg["cdg_edges"])
     ddg_edges = graph_embed(cpg["ddg_edges"])
 
-    return Data(
+    node_code = [node.get("code", "") for node in cpg["nodes"]]
+
+    return (Data(
         x=x,
         ast_edge_index=ast_edges,
         cfg_edge_index=cfg_edges,
         cdg_edge_index=cdg_edges,
         ddg_edge_index=ddg_edges,
-        y=label)
+        y=label), node_code
+    )

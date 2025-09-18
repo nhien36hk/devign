@@ -16,7 +16,7 @@
     },
     "create" : {
         "filter_column_value": {"project" : "qemu"},
-        "slice_size": 1000,
+        "slice_size": 10,
         "joern_cli_dir": "joern/joern-cli/"
     },
     "paths" : {
